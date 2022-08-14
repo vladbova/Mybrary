@@ -5,18 +5,18 @@ const Author = require("../models/author");
 const imageMimeTypes = ["image/jpeg", "image/png", "image/gif"];
 
 router.get("/", async (req, res) => {
-  let query = Book.find()
+  let query = Book.find();
   if (req.query.title != null && req.query.title !== "") {
-    query = query.regex('title', new RegExp(req.query.title, "i"))
+    query = query.regex("title", new RegExp(req.query.title, "i"));
   }
   if (req.query.publishAfter != null && req.query.publishAfter !== "") {
-    query = query.gte('publishDate', req.query.publishAfter)
+    query = query.gte("publishDate", req.query.publishAfter);
   }
   if (req.query.publishBefore != null && req.query.publishBefore !== "") {
-    query = query.lte('publishDate', req.query.publishBefore)
+    query = query.lte("publishDate", req.query.publishBefore);
   }
   try {
-    const books = await query.exec()
+    const books = await query.exec();
 
     res.render("books/index", {
       books: books,
@@ -31,6 +31,73 @@ router.get("/new", async (req, res) => {
   renderNewPage(res, new Book());
 });
 
+router.get("/:id", async (req, res) => {
+  try {
+    const book = await Book.findById(req.params.id).populate('author').exec();
+
+    res.render("books/show", {
+      book: book,
+    });
+  } catch {
+    res.redirect("/");
+  }
+});
+
+router.get("/:id/edit", async (req, res) => {
+  try {
+    const book = await Book.findById(req.params.id);
+    renderEditPage(res, book)
+  } catch {
+    res.redirect("/");
+  }
+});
+
+router.put("/:id", async (req, res) => {
+  let book;
+
+  try {
+    book = await Book.findById(req.params.id);
+    book.title = req.body.title;
+    book.description = req.body.description;
+    book.publishDate = new Date(req.body.publishDate);
+    book.pageCount = req.body.pageCount;
+    book.author = req.body.author;
+
+    if (req.body.cover != null && req.body.cover !== '') {
+      saveCover(book, req.body.cover);
+    }
+    await book.save();
+
+    res.redirect(`/books/${book.id}`);
+  } catch {
+    if (book == null) {
+      renderEditPage(res, book, true)
+    } else {
+      res.redirect('/')
+    }
+  }
+});
+
+router.delete("/:id", async (req, res) => {
+  let book;
+
+  try {
+    book = await Book.findById(req.params.id);
+    await book.remove();
+
+    res.redirect("/books");
+  } catch {
+    if (book != null) {
+      res.render('/books/show', {
+        book: book,
+        errorMessage: 'Could not remove book'
+      })
+    } else {
+      res.redirect('/')
+    }
+  }
+});
+
 router.post("/", async (req, res) => {
   const book = new Book({
     title: req.body.title,
@@ -40,38 +107,52 @@ router.post("/", async (req, res) => {
     description: req.body.description,
   });
 
-  saveCover(book, req.body.cover)
+  saveCover(book, req.body.cover);
 
   try {
     const newBook = await book.save();
-    // res.redirect(`books/${newBook.id}`)
-    res.redirect("books");
+    res.redirect(`/books/${newBook.id}`);
   } catch {
     renderNewPage(res, book, true);
   }
 });
 
 async function renderNewPage(res, book, hasError = false) {
+  renderFormPage(res, book, 'new', hasError)
+}
+
+async function renderEditPage(res, book, hasError = false) {
+  renderFormPage(res, book, 'edit', hasError)
+}
+
+async function renderFormPage(res, book, form, hasError = false) {
   try {
     const authors = await Author.find({});
     const params = {
       book: book,
       authors: authors,
     };
-    if (hasError) params.errorMessage = "Error Creating Book";
+    if (hasError) {
+      if (form === 'edit') {
+        params.errorMessage = "Error Updating Book";
+      } else {
+        params.errorMessage = "Error Creating Book";
+      }
+    }
 
-    res.render("books/new", params);
+    res.render(`books/${form}`, params);
   } catch {
     res.redirect("/books");
   }
 }
 
+
 function saveCover(book, coverEncoded) {
-  if (coverEncoded == null) return
-  const cover = JSON.parse(coverEncoded)
+  if (coverEncoded == null) return;
+  const cover = JSON.parse(coverEncoded);
   if (cover != null && imageMimeTypes.includes(cover.type)) {
-    book.coverImage = Buffer.from(cover.data, 'base64')
-    book.coverImageType = cover.type
+    book.coverImage = Buffer.from(cover.data, "base64");
+    book.coverImageType = cover.type;
   }
 }
 
